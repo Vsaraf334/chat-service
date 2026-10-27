@@ -80,3 +80,24 @@ def test_only_text_blocks_are_returned(api, fake_client):
     response = api.post("/chat", json={"message": "hi"})
     assert response.status_code == 200
     assert response.json()["reply"] == "HelloWorld"
+
+
+def test_chat_stream_sends_events(api, fake_client):
+    fake_stream = fake_client.messages.stream.return_value.__enter__.return_value
+    fake_stream.text_stream = ["Hel", "lo"]
+
+    response = api.post("/chat/stream", json={"message": "hi"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    assert (
+        response.text
+        == 'data: {"text": "Hel"}\n\ndata: {"text": "lo"}\n\ndata: [DONE]\n\n'
+    )
+
+
+def test_chat_stream_rejects_empty_message(api, fake_client):
+    response = api.post("/chat/stream", json={"message": ""})
+    assert response.status_code == 422
+    fake_client.messages.stream.assert_not_called()
