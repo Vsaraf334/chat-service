@@ -1,10 +1,24 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import anthropic
+import httpx2
 import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+
+FAKE_REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+
+
+def rate_limit_error() -> anthropic.RateLimitError:
+    return anthropic.RateLimitError(
+        "rate limited", response=httpx2.Response(429, request=FAKE_REQUEST), body=None
+    )
+
+
+def connection_error() -> anthropic.APIConnectionError:
+    return anthropic.APIConnectionError(request=FAKE_REQUEST)
 
 
 @pytest.fixture
@@ -101,3 +115,25 @@ def test_chat_stream_rejects_empty_message(api, fake_client):
     response = api.post("/chat/stream", json={"message": ""})
     assert response.status_code == 422
     fake_client.messages.stream.assert_not_called()
+
+
+def test_chat_rate_limited_returns_503(api, fake_client):
+    fake_client.messages.create.side_effect = rate_limit_error()
+    response = api.post("/chat", json={"message": "hi"})
+    assert response.status_code == 503
+
+
+def test_chat_connection_error_returns_502(api, fake_client):
+    fake_client.messages.create.side_effect = connection_error()
+    response = api.post("/chat", json={"message": "hi"})
+    assert response.status_code == 502
+
+
+def test_chat_stream_error_sends_error_event(api, fake_client):
+    fake_client.messages.stream.side_effect = rate_limit_error()
+    response = api.post("/chat/stream", json={"message": "hi"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert 'data: {"error": "Claude is busy. Try again shortly."}' in response.text
+    assert "[DONE]" not in response.text
