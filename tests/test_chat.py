@@ -137,3 +137,58 @@ def test_chat_stream_error_sends_error_event(api, fake_client):
     assert response.headers["content-type"].startswith("text/event-stream")
     assert 'data: {"error": "Claude is busy. Try again shortly."}' in response.text
     assert "[DONE]" not in response.text
+
+
+@pytest.fixture(autouse=True)
+def empty_conversations():
+    """Start every test with no stored conversations."""
+    main.conversations.clear()
+
+
+def test_conversation_keeps_both_sides(api, fake_client):
+    # Arrange: create a conversation and get its ID
+    conversation_id = api.post("/conversations").json()["conversation_id"]
+
+    # Act: two turns of chat
+    api.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"message": "My name is Shady"},
+    )
+    api.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"message": "What is my name?"},
+    )
+
+    # Assert: the stored history has both sides, in order
+    history = api.get(f"/conversations/{conversation_id}").json()["messages"]
+    assert [m["role"] for m in history] == ["user", "assistant", "user", "assistant"]
+    assert history[0]["content"] == "My name is Shady"
+
+
+def test_unknown_conversation_returns_404(api, fake_client):
+    # Act + Assert, sending a message to a made-up ID
+    response = api.post(
+        "/conversations/does-not-exist/messages", json={"message": "hi"}
+    )
+    assert response.status_code == 404
+
+    # Act + Assert, reading a made-up ID
+    response = api.get("/conversations/does-not-exist")
+    assert response.status_code == 404
+
+
+def test_failed_message_is_not_kept(api, fake_client):
+    # Arrange: a conversation, and a Claude that fails
+    conversation_id = api.post("/conversations").json()["conversation_id"]
+    fake_client.messages.create.side_effect = rate_limit_error()
+
+    # Act: send a message
+    response = api.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"message": "My name is Shady"},
+    )
+
+    # Assert: 503, and the history is still empty
+    assert response.status_code == 503
+    history = api.get(f"/conversations/{conversation_id}").json()["messages"]
+    assert history == []
