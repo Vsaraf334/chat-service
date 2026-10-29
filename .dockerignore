@@ -1,0 +1,9 @@
+# Never copy secrets or local environments into the image
+.env
+.venv
+.git
+.vscode
+__pycache__
+.pytest_cache
+.ruff_cache
+tests

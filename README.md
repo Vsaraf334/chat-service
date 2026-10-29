@@ -99,6 +99,15 @@ curl -N -X POST http://127.0.0.1:8000/chat/stream \
 
 `.env` is git-ignored. Never commit an API key.
 
+### With Docker
+
+```bash
+docker build -t chat-service .
+docker run --env-file .env -p 8000:8000 chat-service
+```
+
+The image installs only production dependencies, runs as a non-root user, and never contains the API key: `.dockerignore` keeps `.env` out of the build, and the key is passed in at run time with `--env-file`.
+
 ## Tests and checks
 
 ```bash
@@ -126,6 +135,5 @@ The tests replace the Claude client with a mock (`unittest.mock.MagicMock` via `
 
 ## Next steps
 
-- Dockerfile for running the service in a container
 - Persistent conversation storage
 - Tracing and cost tracking per request

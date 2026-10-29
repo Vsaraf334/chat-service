@@ -14,3 +14,6 @@ wheels/
 
 # Editor settings
 .vscode/
+
+# macOS folder metadata
+.DS_Store
